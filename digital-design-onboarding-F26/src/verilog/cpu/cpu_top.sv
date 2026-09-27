@@ -31,6 +31,7 @@ module cpu_top (
 	
 	// === Signal Declarations === //
 	logic stall_core;
+	logic load_stall;
 
 	// Fetch
 	logic [31:0] instr;	
@@ -39,12 +40,31 @@ module cpu_top (
 	logic branch_vld;
 	logic [9:0] branch_trgt;	
 	logic branch_taken;
+
+	// Decode
+	instr_type_e instr_type;
+	logic [4:0]  rs1_addr;
+	logic [4:0]  rs2_addr;
+	logic [4:0]  rd_addr;
+	logic [31:0] imm;
+
+	// Register file
+	logic [31:0] rs1_data;
+	logic [31:0] rs2_data;
+	logic        rd_write_en;
+	logic [4:0]  rd_write_addr;
+	logic [31:0] rd_write_data;
+
+	// ALU
+	logic [31:0] alu_operand_b;
+	logic [31:0] alu_result;
+	logic        alu_equal;
 	
 
-	assign stall_core = halted_o | ~en_i;//when else would you stall?
+	// Stall while halted, disabled, or waiting on a data SRAM read
+	assign stall_core = halted_o | ~en_i | load_stall;
 	
 	// === Instruction Fetch === //
-	// certain ports are tied off bc they depend on modulees you need to implement.
 	fetch u_fetch (
 		.clk_i(clk_i),
 		.rst_i(rst_i),
@@ -62,31 +82,76 @@ module cpu_top (
 		.branch_taken_i(branch_taken)
 	);	
 
-	//tied off, do fix
-	assign branch_vld   = 1'b0;
-    assign branch_trgt  = '0;
-    assign branch_taken = 1'b0;
-	
+	// === Decode === //
+	decode u_decode (
+		.instr_i(instr),
+		.instr_type_o(instr_type),
+		.rs1_addr_o(rs1_addr),
+		.rs2_addr_o(rs2_addr),
+		.rd_addr_o(rd_addr),
+		.imm_o(imm)
+	);
 
-	
+	// === Register File === //
+	reg_file u_reg_file (
+		.clk_i(clk_i),
+		.rst_i(rst_i),
+		.rs1_addr_i(rs1_addr),
+		.rs2_addr_i(rs2_addr),
+		.rs1_data_o(rs1_data),
+		.rs2_data_o(rs2_data),
+		.rd_write_en_i(rd_write_en),
+		.rd_addr_i(rd_write_addr),
+		.rd_data_i(rd_write_data),
+		.reg_values_o(reg_crossbar_o)
+	);
 
+	// === Execute === //
+	// I-type, loads and stores use the immediate as the second operand;
+	// R-type and beq use rs2.
+	always_comb begin
+		case (instr_type)
+			ADDI, LOAD, STORE: alu_operand_b = imm;
+			default:           alu_operand_b = rs2_data;
+		endcase
+	end
 
-	// Unused outputs tied off until downstream modules are added
-	assign halted_o = 1'b0; //what instr should halt the cpu? does this make sense to be combinational or sequential?
+	alu u_alu (
+		.instr_type_i(instr_type),
+		.operand_a_i(rs1_data),
+		.operand_b_i(alu_operand_b),
+		.result_o(alu_result),
+		.equal_o(alu_equal)
+	);
 
-    assign dsram_en_o       = 1'b0;
-    assign dsram_write_en_o = 1'b0;
-    assign dsram_addr_o     = '0;
-    assign dsram_wdata_o    = '0;
+	// === Control === //
+	control u_control (
+		.clk_i(clk_i),
+		.rst_i(rst_i),
+		.en_i(en_i),
+		.instr_vld_i(instr_vld),
+		.instr_type_i(instr_type),
+		.rd_addr_i(rd_addr),
+		.imm_i(imm),
+		.pc_i(current_pc),
+		.rs1_data_i(rs1_data),
+		.rs2_data_i(rs2_data),
+		.alu_result_i(alu_result),
+		.alu_equal_i(alu_equal),
+		.rd_write_en_o(rd_write_en),
+		.rd_addr_o(rd_write_addr),
+		.rd_data_o(rd_write_data),
+		.dsram_en_o(dsram_en_o),
+		.dsram_write_en_o(dsram_write_en_o),
+		.dsram_addr_o(dsram_addr_o),
+		.dsram_wdata_o(dsram_wdata_o),
+		.dsram_rdata_i(dsram_rdata_i),
+		.dsram_rready_i(dsram_rready_i),
+		.branch_vld_o(branch_vld),
+		.branch_trgt_o(branch_trgt),
+		.branch_taken_o(branch_taken),
+		.load_stall_o(load_stall),
+		.halted_o(halted_o)
+	);
 
-
-
-	// TODO: DO THIS FIRST, instantiate our Register File//
-
-	// Disconnect this once you instantiate reg_file and connect reg_file's output to it instead
-	assign reg_crossbar_o = '{default: '0};
-
-
-
-	// instantiate the other modules you make here//
 endmodule

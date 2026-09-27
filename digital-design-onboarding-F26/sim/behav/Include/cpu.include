@@ -4,6 +4,9 @@
 ../../src/verilog/sram_wrapper.sv
 ../../src/verilog/cpu/reg_file.sv
 ../../src/verilog/cpu/fetch.sv
+../../src/verilog/cpu/decode.sv
+../../src/verilog/cpu/alu.sv
+../../src/verilog/cpu/control.sv
 
 ../../src/verilog/cpu/cpu_top.sv
 ../../src/verilog/chip_top.sv
